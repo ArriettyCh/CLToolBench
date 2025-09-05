@@ -488,8 +488,8 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@modelcontextprotocol/server-filesystem",
-                "./annotated_data/files"
+                "@modelcontextprotocol/server-filesystem@2025.8.18",
+                "/"
             ],
             "env": {}
         },

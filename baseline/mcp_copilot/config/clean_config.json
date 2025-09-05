@@ -488,7 +488,7 @@
             "command": "npx",
             "args": [
                 "-y",
-                "@modelcontextprotocol/server-filesystem",
+                "@modelcontextprotocol/server-filesystem@2025.8.18",
                 "/"
             ],
             "env": {}
@@ -500,7 +500,7 @@
                 "run",
                 "arxiv-mcp-server",
                 "--storage-path",
-                "/root/files"
+                "./annotated_data/files"
             ],
             "env": {}
         },
