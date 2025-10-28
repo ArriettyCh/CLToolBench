@@ -29,6 +29,48 @@ def dump_to_yaml(data: dict[str, Any]) -> str:
     )
 
 
+# Router 负责：
+# - 加载本地配置文件中定义的 server（name, config）
+# - 初始化 ToolMatcher（索引/相似度匹配）
+# - 提供 route(query) 来发现最可能的 server/tool
+# - 提供 call_tool(server_name, tool_name, params) 来执行指定工具
+#
+# 动态工具支持——要点（建议的改写位置与行为）：
+# 1) 新增或注入 ToolRegistry 实例（router.tool_registry），用于记录哪些工具当前“暴露”给 agent。
+#    ToolRegistry 的接口建议：is_exposed(server_name, tool_name), expose_tool(...), hide_tool(...), list_exposed(server_name)
+#
+# 2) route(self, query) 返回值改写建议（在函数结尾处）：
+#    - 当前 matcher.match(...) 得到 matched_tools（完整匹配）
+#    - 将 matched_tools 按 router.tool_registry.list_exposed(server_name) 进行过滤，
+#      并在返回结果中同时标注哪些 tool 被隐藏（例如添加字段 "hidden_tools": [...]），便于 agent/运维调试。
+#
+#    伪代码示例：
+#    matched = self.matcher.match(query)
+#    # filter exposed
+#    visible = []
+#    hidden = []
+#    for t in matched['matched_tools']:
+#        if self.tool_registry.is_exposed(t['server_name'], t['tool_name']):
+#            visible.append(t)
+#        else:
+#            hidden.append(t)
+#    return {'success': True, 'matched_tools': visible, 'hidden_tools': hidden}
+#
+# 3) call_tool(...) 建议加入暴露检查（替换/插入点在方法开始处）：
+#    # 在实际建立连接前先检查 registry
+#    if not self.tool_registry.is_exposed(server_name, tool_name):
+#        # 返回一个虚拟报错，而非尝试连接远程 server
+#        return types.CallToolResult(
+#            isError=True,
+#            content=[types.TextContent(text=f"VirtualError: tool {tool_name} on {server_name} not exposed")]
+#        )
+#
+# 4) Lifespan / 生命周期：Router 在 __aenter__ 或初始化时从各 server 加载完整工具（用于内部索引），
+#    但对外通过 registry 控制能见度。建议在 Router 中提供 set_tool_registry(...) 或在构造时接收 registry 参数。
+#
+# 这些改动能让 agent 仅看到 registry 中的工具子集，若尝试调用被隐藏的工具会收到可解释的虚拟错误。
+
+
 class Router:
     _default_config_path = PROJECT_ROOT / "config" / "clean_config.json"
 

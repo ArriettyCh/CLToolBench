@@ -30,7 +30,23 @@ class ToolMatcher:
         )
         self.openai_client = None
 
+    # 模块说明：
+    # ToolMatcher 负责加载预先生成的服务器/工具索引（来自 arg_generation），
+    # 并基于 embedding 相似度匹配最相关的 servers 与 tools。
+    #
+    # 设计建议（职责分离）：
+    # - ToolMatcher 只输出“匹配结果的完整集合”（matched_servers / matched_tools）
+    # - 不在此处实现“是否暴露给 agent”检查；将可见性逻辑放到 Router/ToolRegistry
+    #
+    # 注释示例（方法级）：
+    # - load_data(data_path): 读取用于匹配的 JSON 数据（该数据应包含 description_embedding 等）
+    # - get_embedding(text): 同步调用 embedding API，返回 embedding 向量（有重试）
+    # - match_servers / match_tools / match: 分别完成 server 层和 tool 层的匹配，返回带分数的结构
+    #
+    # 这样能保持 matcher 代码单一职责，且便于替换或测试（例如用本地 mock embedding）。
+
     def load_data(self, data_path: str) -> None:
+        """读取用于匹配的 JSON 数据（该数据应包含 description_embedding 等）"""
         try:
             with open(data_path, "r", encoding="utf-8") as f:
                 self.servers_data = json.load(f)
@@ -53,6 +69,7 @@ class ToolMatcher:
         return None, None
 
     def get_embedding(self, text: str, max_retries: int = 3) -> Optional[List[float]]:
+        """同步调用 embedding API，返回 embedding 向量（有重试）"""
         if not self.openai_client:
             raise ValueError(
                 "OpenAI client not initialized. Call setup_openai_client first."
@@ -87,6 +104,7 @@ class ToolMatcher:
         return np.dot(vec1, vec2) / (norm1 * norm2)
 
     def match_servers(self, server_desc: str) -> List[Dict[str, Any]]:
+        """完成 server 层的匹配，返回带分数的结构"""
         if not self.servers_data:
             raise ValueError("No server data loaded. Call load_data first.")
         query_embedding = self.get_embedding(server_desc)
@@ -112,6 +130,7 @@ class ToolMatcher:
     def match_tools(
         self, server_list: List[Dict[str, Any]], tool_desc: str
     ) -> List[Dict[str, Any]]:
+        """完成 tool 层的匹配，返回带分数的结构"""
         query_embedding = self.get_embedding(tool_desc)
         if not query_embedding:
             raise ValueError("Failed to get embedding for tool description")

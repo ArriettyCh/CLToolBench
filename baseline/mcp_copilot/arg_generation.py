@@ -32,6 +32,21 @@ DEFAULT_OUTPUT_PATH = Path(
 )
 
 
+# 模块注释建议：
+# 该模块负责从本地 tools 定义文件生成用于相似度检索的摘要与 embedding（写入 config/mcp_arg_*.json）。
+# 过程：
+# - 读取 tools.json（或其它），为每个 server -> 提取工具列表 -> 调用抽象模型生成 server summary
+# - 调用 embedding 模型获取描述与摘要的向量
+# - 将结果写入 output JSON（供 ToolMatcher 加载）
+#
+# 动态工具的建议：
+# - 该流程只是为匹配提供全量索引（不影响运行时对 agent 的暴露决策）
+# - 保持生成的文件包含完整工具信息（以便匹配）
+# - 由 Router + ToolRegistry 在 runtime 决定实际对 agent 返回的工具子集
+#
+# 代码中重要函数（如 _get_embedding/_generate_summary/generate）建议增加 docstring 和错误处理注释（已经有较好实现）
+
+
 class McpArgGenerator:
     def __init__(
         self,
@@ -59,6 +74,7 @@ class McpArgGenerator:
     async def _get_embedding(
         self, text: str, model: str = embedding_model
     ) -> List[float]:
+        """生成文本的嵌入向量"""
         if not text:
             logger.warning("Empty text provided for embedding, returning empty list.")
             return []
@@ -80,6 +96,7 @@ class McpArgGenerator:
         tools: List[types.Tool],
         model: str = abstract_model,
     ) -> str:
+        """生成服务器的摘要信息"""
         tool_descriptions = "\n".join(
             [f"- {tool.name}: {tool.description}" for tool in tools]
         )
@@ -114,6 +131,7 @@ Please return only the generated summary text, without any additional titles or 
             return f"Error generating summary for {server_name}"
 
     def _format_tool_parameters(self, tool: types.Tool) -> Dict[str, str]:
+        """格式化工具的参数信息"""
         formatted_params = {}
         schema = tool.inputSchema
         if not schema or "properties" not in schema:
@@ -133,6 +151,7 @@ Please return only the generated summary text, without any additional titles or 
         return formatted_params
 
     async def generate(self) -> None:
+        """主生成函数，处理配置中的每个服务器"""
         existing_servers_info = []
         existing_server_names = set()
 
@@ -172,9 +191,11 @@ Please return only the generated summary text, without any additional titles or 
             server_description = server["description"]
             logger.info(f"Indexing server: {server_name}")
             try:
+                # 生成服务器摘要
                 server_summary = await self._generate_summary(
                     server_name, server_description, tools
                 )
+                # 获取描述与摘要的嵌入向量
                 embedding_tasks = {
                     "server_desc": self._get_embedding(server_description),
                     "server_summary": self._get_embedding(server_summary),
@@ -208,6 +229,7 @@ Please return only the generated summary text, without any additional titles or 
                 all_servers_info.append(server_output)
 
                 try:
+                    # 写入输出文件
                     self.output_file.parent.mkdir(parents=True, exist_ok=True)
                     with open(self.output_file, "w", encoding="utf-8") as f:
                         json.dump(all_servers_info, f, indent=2, ensure_ascii=False)
